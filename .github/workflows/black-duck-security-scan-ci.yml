@@ -1,0 +1,32 @@
+name: Polaris
+on:
+#  pull_request:
+#    branches: [ main, master, develop, stage, release ]  
+  workflow_dispatch:
+jobs:
+  polaris-scan:
+    runs-on: [ ubuntu-latest ]
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v3
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: 25
+          distribution: microsoft
+          cache: maven
+      - name: Polaris Full Scan
+        uses: blackduck-inc/black-duck-security-scan@v2.0.0
+        with:
+          polaris_server_url: ${{ vars.POLARIS_SERVER_URL }}
+          polaris_access_token: ${{ secrets.POLARIS_ACCESS_TOKEN }}
+          polaris_application_name: "WebGoat-FCBR" # ${{ github.event.repository.name }}
+          polaris_project_name: "WebGoat" # ${{ github.event.repository.name }}
+          polaris_branch_name: ${{ github.ref_name }}
+          polaris_assessment_types: "SAST,SCA"
+          polaris_test_sca_type: "SCA-PACKAGE,SCA-SIGNATURE"
+          # polaris_waitForScan: false
+          # coverity_build_command: mvn clean install
+          # coverity_clean_command: mvn clean
+          # coverity_args: --enable-audit-mode
+          # detect_search_depth: 2       
