@@ -3,10 +3,8 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 package org.owasp.webgoat.webwolf;
-
 import static java.util.Comparator.comparing;
 import static org.springframework.http.MediaType.ALL_VALUE;
-
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.File;
 import java.io.IOException;
@@ -32,27 +30,20 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.view.RedirectView;
-
 /** Controller for uploading a file */
 @Controller
 @Slf4j
 public class FileServer {
-
   private static final DateTimeFormatter dateTimeFormatter =
       DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
   @Value("${webwolf.fileserver.location}")
   private String fileLocation;
-
   @Value("${server.address}")
   private String server;
-
   @Value("${server.servlet.context-path}")
   private String contextPath;
-
   @Value("${server.port}")
   private int port;
-
   @RequestMapping(
       path = "/file-server-location",
       consumes = ALL_VALUE,
@@ -61,7 +52,26 @@ public class FileServer {
   public String getFileLocation() {
     return fileLocation;
   }
-
+ 
+  /** DEMO VULN #1 - OS Command Injection (CWE-78). Parametro do usuario vai direto para Runtime.exec(). SAST deve marcar como Critical/High. */
+  @GetMapping(value = "/ping", produces = MediaType.TEXT_PLAIN_VALUE)
+  @ResponseBody
+  public String ping(@RequestParam("host") String host) throws IOException {
+    String cmd = "ping -c 1 " + host;
+    Process process = Runtime.getRuntime().exec(new String[] {"/bin/sh", "-c", cmd});
+    try (InputStream is = process.getInputStream()) {
+      return new String(is.readAllBytes());
+    }
+  }
+ 
+  /** DEMO VULN #2 - Path Traversal (CWE-22). Caminho montado com input do usuario sem sanitizacao, permitindo ler arquivos arbitrarios. */
+  @GetMapping(value = "/download-file", produces = MediaType.TEXT_PLAIN_VALUE)
+  @ResponseBody
+  public String downloadFile(@RequestParam("name") String name) throws IOException {
+    File requested = new File(fileLocation + "/" + name);
+    return new String(Files.readAllBytes(requested.toPath()));
+  }
+ 
   @PostMapping(value = "/fileupload")
   public ModelAndView importFile(
       @RequestParam("file") MultipartFile multipartFile, Authentication authentication)
@@ -77,18 +87,15 @@ public class FileServer {
       Files.copy(is, destinationFile);
     }
     log.debug("File saved to {}", new File(destinationDir, multipartFile.getOriginalFilename()));
-
     return new ModelAndView(
         new RedirectView("files", true),
         new ModelMap().addAttribute("uploadSuccess", "File uploaded successful"));
   }
-
   @GetMapping(value = "/files")
   public ModelAndView getFiles(
       HttpServletRequest request, Authentication authentication, TimeZone timezone) {
     String username = (null != authentication) ? authentication.getName() : "anonymous";
     File destinationDir = new File(fileLocation, username);
-
     ModelAndView modelAndView = new ModelAndView();
     modelAndView.setViewName("files");
     File changeIndicatorFile = new File(destinationDir, username + "_changed");
@@ -96,9 +103,7 @@ public class FileServer {
       modelAndView.addObject("uploadSuccess", request.getParameter("uploadSuccess"));
     }
     changeIndicatorFile.delete();
-
     record UploadedFile(String name, String size, String link, String creationTime) {}
-
     var uploadedFiles = new ArrayList<UploadedFile>();
     File[] files = destinationDir.listFiles(File::isFile);
     if (files != null) {
@@ -109,14 +114,12 @@ public class FileServer {
             new UploadedFile(file.getName(), size, link, getCreationTime(timezone, file)));
       }
     }
-
     modelAndView.addObject(
         "files",
         uploadedFiles.stream().sorted(comparing(UploadedFile::creationTime).reversed()).toList());
     modelAndView.addObject("webwolf_url", "http://" + server + ":" + port + contextPath);
     return modelAndView;
   }
-
   private String getCreationTime(TimeZone timezone, File file) {
     try {
       FileTime creationTime = (FileTime) Files.getAttribute(file.toPath(), "creationTime");
